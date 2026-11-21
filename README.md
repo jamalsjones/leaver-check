@@ -69,6 +69,7 @@ The sample data in `examples/` is invented. Northpeak isn't a real company.
 
 ## Related
 
+- [SAML check](https://github.com/jamalsjones/saml-check): review SAML responses, requests and metadata.
 - [JWT lint](https://github.com/jamalsjones/jwt-lint) and [OIDC config check](https://github.com/jamalsjones/oidc-config-check).
 
 ## Author
