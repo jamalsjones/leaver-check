@@ -1,0 +1,17 @@
+Employee ID,First Name,Last Name,Work Email,Employment Status,Termination Date,Department
+100231,Alex,Rivera,alex.rivera@northpeak.example,Active,,Finance
+100245,Priya,Nair,priya.nair@northpeak.example,Active,,Finance
+100248,Sam,Okafor,sam.okafor@northpeak.example,Active,,Payroll
+100252,Dana,Kowalski,dana.kowalski@northpeak.example,Terminated,2026-08-29,Payroll
+100260,Lee,Haddad,lee.haddad@northpeak.example,Active,,Engineering
+100263,Morgan,Byrne,morgan.byrne@northpeak.example,Terminated,2026-10-31,Engineering
+100271,Chris,Tanaka,chris.tanaka@northpeak.example,Active,2026-11-07,Sales
+100274,Jordan,Mbeki,jordan.mbeki@northpeak.example,Leave of Absence,,Sales
+100280,Taylor,Novak,taylor.novak@northpeak.example,Active,,Sales
+100283,Riley,Costa,riley.costa@northpeak.example,Active,2026-12-19,Support
+100290,Casey,Lindqvist,casey.lindqvist@northpeak.example,Terminated,2026-03-13,Support
+100294,Jamie,Achebe,jamie.achebe@northpeak.example,Active,,Support
+100301,Avery,Moreau,avery.moreau@northpeak.example,Active,,People
+100305,Quinn,Delgado,quinn.delgado@northpeak.example,Active,,People
+100312,Rowan,Petrov,rowan.petrov@northpeak.example,Active,,Legal
+100318,Hayden,Sato,hayden.sato@northpeak.example,Active,,Legal

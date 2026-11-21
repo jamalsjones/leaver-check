@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leaver Check</title>
+    <meta name="description" content="Compare an HR export with an app's user list and find active accounts for leavers, accounts that match no one, and accounts nobody uses. Runs in your browser; files never leave it." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="top">
+        <h1 class="wordmark">leaver check</h1>
+        <p class="label">HR export × app users</p>
+      </header>
+      <p class="lede">Drop in an HR export and one application's user list. Get the accounts an access review should look at first, and a sheet reviewers can fill in. The files are read in this page and never uploaded.</p>
+
+      <section class="panel">
+        <div class="grid two">
+          <label class="drop" id="drop-hr">
+            <input type="file" id="file-hr" accept=".csv,.tsv,.txt,text/csv" />
+            <strong>HR export</strong>
+            <span id="name-hr">One row per person: ID or email, status, termination date. CSV.</span>
+          </label>
+          <label class="drop" id="drop-app">
+            <input type="file" id="file-app" accept=".csv,.tsv,.txt,text/csv" />
+            <strong>App user list</strong>
+            <span id="name-app">One row per account: username or email, status, last login. CSV.</span>
+          </label>
+        </div>
+        <div class="fields">
+          <div class="field"><label for="app-name">Application</label><input id="app-name" type="text" placeholder="e.g. Payroll" /></div>
+          <div class="field"><label for="as-of">As of</label><input id="as-of" type="text" placeholder="YYYY-MM-DD" /></div>
+          <div class="field"><label for="dormant">Dormant after (days)</label><input id="dormant" type="number" min="0" value="90" /></div>
+          <div class="field"><label for="order">Dates like 03/04/2026</label>
+            <select id="order"><option value="auto">Guess (US first)</option><option value="mdy">Month first</option><option value="dmy">Day first</option></select>
+          </div>
+        </div>
+        <details id="mapping" hidden>
+          <summary>Columns used</summary>
+          <p class="note" style="margin-top:6px">Picked from the header names. Change any that are wrong.</p>
+          <p class="label" style="margin-top:12px">HR export</p>
+          <div class="map" id="map-hr"></div>
+          <p class="label" style="margin-top:12px">App user list</p>
+          <div class="map" id="map-app"></div>
+        </details>
+        <div class="row">
+          <button class="pill outline" id="sample">Try sample files</button>
+          <button class="pill dark" id="download" disabled>Download review sheet</button>
+        </div>
+      </section>
+
+      <section class="panel" id="results" style="margin-top:16px" aria-live="polite">
+        <p class="label">Findings</p>
+        <p class="empty">Add both files, or try the sample files.</p>
+      </section>
+
+      <section class="panel" style="margin-top:16px">
+        <p class="label">Other ways to run it</p>
+        <p style="margin:0 0 10px">The same script runs from the command line, on a schedule, or as a Claude skill that explains the findings and drafts the access-review summary. See the <a href="https://github.com/jamalsjones/leaver-check">README</a>.</p>
+        <pre class="json">node skill/leaver-check/scripts/leaver-check.js --hr hr.csv --app users.csv --app-name Payroll --out review.csv</pre>
+      </section>
+
+      <footer>
+        <span>By <a href="https://www.jamalsjones.com">Jamal Jones</a></span>
+        <a href="https://github.com/jamalsjones/leaver-check">Source on GitHub</a>
+        <a href="https://jamalsjones.github.io/jwt-lint/">JWT lint</a>
+        <a href="https://jamalsjones.github.io/oidc-config-check/">OIDC config check</a>
+      </footer>
+    </main>
+    <script src="skill/leaver-check/scripts/leaver-check.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

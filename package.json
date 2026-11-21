@@ -1,0 +1,13 @@
+{
+  "name": "leaver-check",
+  "version": "1.0.0",
+  "description": "Compare an HR export with an app's user list: active accounts for leavers, accounts that match no one, and unused accounts, ready for an access review. Browser page, command-line tool and Claude skill, no dependencies.",
+  "license": "MIT",
+  "author": "Jamal Jones (https://www.jamalsjones.com)",
+  "main": "skill/leaver-check/scripts/leaver-check.js",
+  "bin": { "leaver-check": "skill/leaver-check/scripts/leaver-check.js" },
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=18" },
+  "repository": { "type": "git", "url": "https://github.com/jamalsjones/leaver-check" },
+  "keywords": ["iam", "access-review", "joiner-mover-leaver", "offboarding", "identity-governance", "claude-skill"]
+}

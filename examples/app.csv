@@ -1,0 +1,21 @@
+Username,Email,Display Name,Status,Last Login
+arivera,alex.rivera@northpeak.example,Alex Rivera,ACTIVE,2026-11-14
+a.rivera,alex.rivera@northpeak.example,Alex Rivera (old),ACTIVE,2026-02-03
+pnair,priya.nair@northpeak.example,Priya Nair,ACTIVE,2026-11-13
+sokafor,sam.okafor@northpeak.example,Sam Okafor,ACTIVE,2026-11-12
+dkowalski,,Dana Kowalski,ACTIVE,2026-09-02
+lhaddad,lee.haddad@northpeak.example,Lee Haddad,ACTIVE,2026-11-15
+mbyrne,morgan.byrne@northpeak.example,Morgan Byrne,ACTIVE,2026-10-30
+ctanaka,chris.tanaka@northpeak.example,Chris Tanaka,ACTIVE,2026-11-06
+jmbeki,jordan.mbeki@northpeak.example,Jordan Mbeki,ACTIVE,2026-07-21
+tnovak,taylor.novak@northpeak.example,Taylor Novak,LOCKED_OUT,2026-11-10
+rcosta,riley.costa@northpeak.example,Riley Costa,ACTIVE,2026-11-14
+clindqvist,casey.lindqvist@northpeak.example,Casey Lindqvist,DEPROVISIONED,2026-03-12
+jachebe,jamie.achebe@northpeak.example,Jamie Achebe,ACTIVE,
+amoreau,avery.moreau@northpeak.example,Avery Moreau,ACTIVE,2026-11-11
+qdelgado,quinn.delgado@northpeak.example,Quinn Delgado,ACTIVE,2026-05-28
+rpetrov,rowan.petrov@northpeak.example,Rowan Petrov,ACTIVE,2026-11-09
+msantos,m.santos@northpeak.example,M. Santos,ACTIVE,2026-04-17
+jlee.contractor,jlee@partner.example,J. Lee (contractor),ACTIVE,2026-10-02
+svc-payroll-sync,payroll-sync@northpeak.example,Payroll sync,ACTIVE,2026-11-15
+qa-test-user,,QA test user,ACTIVE,2025-12-01
