@@ -33,4 +33,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install cfn-lint
-      - run: cfn-lint aws/template.yaml
+      - run: cfn-lint aws/template.yaml aws/github-deploy-role.yaml

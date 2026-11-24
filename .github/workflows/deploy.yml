@@ -1,0 +1,112 @@
+name: Deploy to AWS
+
+# Run by hand from the Actions tab. Needs the one-time setup in
+# aws/github-deploy-role.yaml and two repository variables:
+#   AWS_DEPLOY_ROLE_ARN  the DeployRoleArn output of that stack
+#   AWS_REGION           the region that stack is in, e.g. us-east-1
+# Optional repository secret ALARM_EMAIL: where the errors alarm sends email.
+on:
+  workflow_dispatch:
+    inputs:
+      stack-name:
+        description: CloudFormation stack name (must start with leaver-check)
+        default: leaver-check
+        required: true
+
+permissions:
+  id-token: write   # lets the job request a GitHub OIDC token for AWS
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.stack-name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy and smoke test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      STACK: ${{ inputs.stack-name }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - name: Check the stack name
+        run: |
+          [[ "$STACK" =~ ^leaver-check[a-z0-9-]*$ ]] || { echo "::error::Stack name must start with leaver-check and use lowercase letters, digits and hyphens."; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      # Same major version as the function's nodejs24.x runtime, which sam build checks.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Get temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: leaver-check-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Find the account
+        id: account
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "::add-mask::$ACCOUNT"
+          echo "id=$ACCOUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        working-directory: aws
+        run: sam build
+
+      - name: Deploy
+        working-directory: aws
+        env:
+          ACCOUNT: ${{ steps.account.outputs.id }}
+          ALARM_EMAIL: ${{ secrets.ALARM_EMAIL }}
+        run: |
+          sam deploy \
+            --stack-name "$STACK" \
+            --region "$AWS_REGION" \
+            --s3-bucket "leaver-check-artifacts-$ACCOUNT-$AWS_REGION" \
+            --s3-prefix "$STACK" \
+            --role-arn "arn:aws:iam::$ACCOUNT:role/leaver-check-cfn-execution-$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides "AlarmEmail=$ALARM_EMAIL" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      # Upload the example files (fictional people) and check the function writes
+      # the same findings the tests expect: 3 leavers, 2 orphans, 4 dormant.
+      - name: Smoke test
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+          RUN="runs/smoke-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo '{"appName": "Smoke test", "asOf": "2026-11-15"}' > config.json
+          aws s3 cp config.json "s3://$BUCKET/$RUN/config.json" --only-show-errors
+          aws s3 cp examples/hr.csv "s3://$BUCKET/$RUN/hr.csv" --only-show-errors
+          aws s3 cp examples/app.csv "s3://$BUCKET/$RUN/app.csv" --only-show-errors
+          for i in $(seq 1 30); do
+            if aws s3 cp "s3://$BUCKET/$RUN/summary.json" summary.json --only-show-errors 2>/dev/null; then break; fi
+            sleep 3
+          done
+          [ -f summary.json ] || { echo "::error::No summary.json after 90 seconds. Check the function's logs and the failed-runs queue."; exit 1; }
+          aws s3 cp "s3://$BUCKET/$RUN/review.csv" review.csv --only-show-errors
+          node -e '
+            const s = require("./summary.json").summary;
+            console.log(JSON.stringify(s, null, 2));
+            const want = { leaver: 3, orphan: 2, dormant: 4 };
+            const bad = Object.entries(want).filter(([k, v]) => s[k] !== v);
+            if (bad.length) { console.error("::error::Unexpected counts: " + JSON.stringify(bad)); process.exit(1); }
+          '
+          echo "review.csv: $(($(wc -l < review.csv) - 1)) rows"
+          {
+            echo "### Deployed \`$STACK\` to $AWS_REGION"
+            echo
+            echo "Smoke test passed: 3 leavers, 2 orphan accounts, 4 dormant, the same as \`npm test\`."
+          } >> "$GITHUB_STEP_SUMMARY"

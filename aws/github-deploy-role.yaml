@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  One-time setup so GitHub Actions can deploy Leaver check without stored AWS keys.
+  GitHub signs a short-lived OIDC token, AWS exchanges it for temporary credentials
+  on DeployRole, and CloudFormation creates the app's resources with ExecutionRole.
+  Create this stack once per account and region, in the region you deploy to.
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: jamalsjones
+    Description: GitHub user or organization that owns the repository.
+  GitHubRepo:
+    Type: String
+    Default: leaver-check
+    Description: Repository name.
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set to false if this account already has an IAM OIDC provider for
+      token.actions.githubusercontent.com (an account can have only one).
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  # Holds the packaged function code and template that `sam deploy` uploads.
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "leaver-check-artifacts-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub "${ArtifactsBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # Assumed by GitHub Actions. Only workflows running on the main branch of the
+  # repository can get credentials, and they last one hour at most.
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "leaver-check-github-deploy-${AWS::Region}"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: deploy-leaver-check
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Run change sets on leaver-check stacks. The resources themselves are
+              # created by ExecutionRole, which only CloudFormation can assume.
+              - Sid: ChangeSets
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                Resource:
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/leaver-check*/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31"
+              - Sid: ReadStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: PassExecutionRoleToCloudFormation
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt ExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+              - Sid: UploadArtifacts
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !Sub "${ArtifactsBucket.Arn}/*"
+              # The workflow's smoke test uploads the example files (fictional people)
+              # to runs/smoke-test-*/ and reads the results back. Nothing else.
+              - Sid: SmokeTestFiles
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-*/runs/smoke-test-*/*"
+              - Sid: SmokeTestListing
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-*"
+                Condition:
+                  StringLike:
+                    s3:prefix: "runs/smoke-test-*"
+
+  # Assumed only by CloudFormation, to create and update the resources in
+  # aws/template.yaml. Every statement is limited to leaver-check names.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "leaver-check-cfn-execution-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: manage-leaver-check-resources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Bucket-level actions only: the resource is the bucket ARN, never
+              # objects, so this role can configure the bucket but not read files.
+              - Sid: RunsBucket
+                Effect: Allow
+                Action: s3:*
+                Resource: !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-*"
+              - Sid: ReadPackagedCode
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${ArtifactsBucket.Arn}/*"
+              - Sid: Function
+                Effect: Allow
+                Action: lambda:*
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:leaver-check*"
+              - Sid: FunctionRole
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/leaver-check*"
+              - Sid: PassFunctionRoleToLambda
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/leaver-check*"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+              # The only managed policy the function role may get is basic logging.
+              - Sid: AttachBasicExecutionOnly
+                Effect: Allow
+                Action: iam:AttachRolePolicy
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/leaver-check*"
+                Condition:
+                  ArnEquals:
+                    iam:PolicyARN: !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              - Sid: FailedRunsQueue
+                Effect: Allow
+                Action: sqs:*
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:leaver-check*"
+              - Sid: AlarmTopic
+                Effect: Allow
+                Action: sns:*
+                Resource: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:leaver-check*"
+              - Sid: Alarm
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:TagResource
+                  - cloudwatch:UntagResource
+                Resource: !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:leaver-check*"
+              - Sid: DescribeAlarms
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:ListTagsForResource
+                Resource: "*"
+              - Sid: LogGroup
+                Effect: Allow
+                Action: logs:*
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/leaver-check*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/leaver-check*:*"
+              - Sid: DescribeLogGroups
+                Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: "*"
+
+Outputs:
+  DeployRoleArn:
+    Description: Save this as the AWS_DEPLOY_ROLE_ARN repository variable in GitHub.
+    Value: !GetAtt DeployRole.Arn
+  ExecutionRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+  ArtifactsBucketName:
+    Value: !Ref ArtifactsBucket
