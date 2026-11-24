@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Technical walkthrough of CI on four identity tools and the AWS Lambda version of Leaver check: architecture, request flow, design decisions and production readiness.">
+<title>Identity Tools Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a single-column technical walkthrough, five numbered sections; diagrams scroll sideways on phones, cards stack. */
+:root {
+  /* Palette from jamalsjones.com: concrete ground, bone panels, graphite text, ink-blue accent, signal colors. */
+  --bg: #e7eaeb;          /* concrete */
+  --panel: #fbfcfc;       /* bone */
+  --ink: #0c0c0d;         /* graphite */
+  --muted: #5f6264;
+  --rule: #d0d4d5;        /* shell */
+  --blue: #174a92;  --blue-soft: #ecf4ff;   /* ink */
+  --red: #c5372f;   --red-soft: #ffe3de;    /* signal-gap */
+  --green: #267b4c; --green-soft: #e3f1e8;  /* signal-good */
+  --amber: #855000; --amber-soft: #fae5c3;  /* signal-close */
+  --grey-soft: #edf1f2;
+  --note-y: #fae5c3; --note-p: #ffe3de; --note-b: #ecf4ff; --note-g: #dcefe3;
+  --note-ink: #0c0c0d;
+  --display: "Host Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --marker: var(--body);      /* labels on the diagrams use the body face */
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;   /* light only, like jamalsjones.com */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 56px; }
+header { display: grid; gap: 14px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 600; letter-spacing: -0.025em; font-size: clamp(30px, 5vw, 48px); line-height: 1.08; margin: 0; text-wrap: balance; }
+h1 .u { color: var(--blue); }
+.lede { max-width: 66ch; margin: 0; color: var(--muted); }
+.status { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid currentColor; border-radius: 999px; font-size: 13.5px; font-weight: 600; background: var(--panel); }
+.chip code { font-weight: 400; }
+.chip.ok { color: var(--green); }
+.chip.warn { color: var(--red); }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+section { display: grid; gap: 16px; min-width: 0; }
+.bh { display: flex; align-items: baseline; gap: 14px; }
+.num { font-family: var(--display); font-weight: 600; font-size: 15px; width: 32px; height: 32px; font-variant-numeric: tabular-nums; flex: none; display: grid; place-items: center; border: 1.5px solid var(--blue); color: var(--blue); border-radius: 50%; transform: translateY(4px); }
+h2 { font-family: var(--display); font-weight: 600; letter-spacing: -0.02em; font-size: clamp(22px, 3.2vw, 30px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); max-width: 70ch; }
+.board { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); -webkit-overflow-scrolling: touch; }
+.board svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.hint { display: none; font-size: 13px; color: var(--muted); }
+@media (max-width: 760px) { .hint { display: block; } }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+
+/* SVG text */
+svg text { font-family: var(--marker); fill: var(--ink); font-size: 16px; font-weight: 500; paint-order: stroke; stroke: var(--panel); stroke-width: 5px; stroke-linejoin: round; }
+svg text.b { font-weight: 700; font-size: 18.5px; letter-spacing: -0.01em; }
+svg text.s { font-size: 14px; }
+svg text.m { font-family: var(--mono); font-size: 13px; }
+svg text.mut { fill: var(--muted); }
+svg text.blue { fill: var(--blue); } svg text.red { fill: var(--red); } svg text.green { fill: var(--green); } svg text.amber { fill: var(--amber); }
+svg text.nob { stroke: none; }
+
+/* Sticky notes */
+.notes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 960px) { .notes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .notes { grid-template-columns: 1fr; } }
+.note { background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.note .tag { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--blue); }
+.note.wide { grid-column: span 2; }
+@media (max-width: 560px) { .note.wide { grid-column: auto; } }
+.note h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 18px; line-height: 1.2; margin: 0; }
+.note p { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.note .why { font-size: 15px; line-height: 1.45; padding-top: 8px; border-top: 1px solid var(--rule); }
+.note .why b { display: block; text-transform: uppercase; letter-spacing: .08em; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.note .where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.note ul { margin: 0; padding-left: 18px; font-size: 15px; display: grid; gap: 2px; }
+
+/* Talk track */
+.talk { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .talk { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; display: grid; gap: 12px; min-width: 0; }
+.card h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 20px; margin: 0; }
+.track { margin: 0; padding: 0; list-style: none; counter-reset: t; display: grid; gap: 12px; }
+.track li { counter-increment: t; display: grid; grid-template-columns: 30px 1fr; gap: 10px; font-size: 16px; }
+.track li::before { content: counter(t); font-family: var(--display); font-weight: 700; color: var(--blue); font-size: 18px; line-height: 1.4; }
+.timer { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.qa { display: grid; gap: 14px; }
+.q { font-family: var(--display); font-weight: 600; font-size: 17px; color: var(--ink); margin: 0; line-height: 1.3; }
+.a { margin: 0; font-size: 15.5px; }
+.qa > div { display: grid; gap: 4px; padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
+.qa > div:last-child { border-bottom: 0; padding-bottom: 0; }
+/* Readiness */
+.ready { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .ready { grid-template-columns: 1fr; } }
+.ready ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 15px; }
+.pill { display: inline-block; justify-self: start; font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.good { color: var(--green); } .pill.info { color: var(--blue); } .pill.high { color: var(--red); } .pill.med { color: var(--amber); } .pill.low { color: var(--muted); }
+.gaps { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.gaps h3, .next h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 20px; margin: 0; }
+.gaps > h3 { padding: 18px 22px 6px; }
+.gap { display: grid; grid-template-columns: 84px minmax(0, 1.25fr) minmax(0, 1fr); gap: 6px 20px; padding: 14px 22px; border-top: 1px solid var(--rule); align-items: start; }
+.gap:first-of-type { border-top: 0; }
+.gap h4 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0 0 2px; }
+.gap p { margin: 0; font-size: 15px; }
+.gap .fix { color: var(--muted); }
+.gap .fix b { color: var(--ink); font-weight: 600; }
+.gaphead { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 4px; padding-bottom: 8px; }
+@media (max-width: 760px) { .gap { grid-template-columns: 1fr; } .gaphead { display: none; } }
+.next { display: grid; gap: 10px; }
+.next ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 18px; }
+footer p { margin: 0; max-width: 90ch; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Technical walkthrough · 24 Nov 2026 · github.com/jamalsjones</div>
+    <h1>CI on four identity tools, and <span class="u">Leaver check on AWS Lambda</span></h1>
+    <p class="lede">Five diagrams covering what changed, how a single run works, and the reasoning behind each design choice, plus what is left before production use. Every label is taken from the code in the repositories.</p>
+    <div class="status">
+      <span class="chip ok"><span class="dot"></span>CI green on PR #1 in all 4 repos, squash-merged</span>
+      <span class="chip ok"><span class="dot"></span>22 / 22 tests pass (12 core + 10 Lambda)</span>
+      <span class="chip warn"><span class="dot"></span>Not deployed to AWS yet: <code>sam build &amp;&amp; sam deploy --guided</code></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="bh"><span class="num">1</span><h2>Overview: one test matrix across four repositories</h2></div>
+    <p class="sub">Each repo got the same <code>.github/workflows/test.yml</code>. Leaver check also lints its AWS template.</p>
+    <span class="hint">Scroll sideways to see the full diagram.</span>
+    <div class="board"><svg id="b1" viewBox="0 0 1000 410" role="img" aria-label="Four repos feed one GitHub Actions workflow that runs npm test on Node 20, 22 and 24, then each README shows a passing Tests badge."></svg></div>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">2</span><h2>Leaver check on AWS Lambda: architecture</h2></div>
+    <p class="sub">Two CSV uploads to one folder start a run. The red dashed boundary marks everything the function's IAM role allows.</p>
+    <span class="hint">Scroll sideways to see the full diagram.</span>
+    <div class="board"><svg id="b2" viewBox="0 0 1100 580" role="img" aria-label="You upload hr.csv and app.csv to runs/name/ in an S3 bucket. An S3 event filter on hr.csv and app.csv invokes the Lambda, which reads the inputs, runs reconcile(), writes review.csv and summary.json, and logs counts to CloudWatch. An IAM role boundary surrounds the function."></svg></div>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">3</span><h2>Request flow for a single run</h2></div>
+    <p class="sub">The first upload finds one file and exits without writing. The second finds both and produces the results. Writing the results does not trigger another run.</p>
+    <span class="hint">Scroll sideways to see the full diagram.</span>
+    <div class="board"><svg id="b3" viewBox="0 0 1000 720" role="img" aria-label="Sequence: upload hr.csv, function starts, app.csv is 404 so it returns waiting. Upload app.csv, function starts, reads both, calls reconcile, writes review.csv and summary.json. Those writes trigger no event."></svg></div>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">4</span><h2>Design decisions</h2></div>
+    <p class="sub">Each decision with its rationale and where it is implemented.</p>
+    <div class="notes">
+      <article class="note">
+        <span class="tag">Access control</span>
+        <h3>Least-privilege IAM</h3>
+        <p>GetObject on 3 names only: <code>hr.csv</code>, <code>app.csv</code>, <code>config.json</code>. PutObject on 2: <code>review.csv</code>, <code>summary.json</code>. No delete.</p>
+        <p class="why"><b>Why</b> It handles HR data. A bug can't read other paths or wipe a run.</p>
+        <p class="where">aws/template.yaml · Policies</p>
+      </article>
+      <article class="note b">
+        <span class="tag">Access control</span>
+        <h3>ListBucket, only on runs/*</h3>
+        <p>Without it, S3 answers a missing key with 403. With it, 404 <code>NoSuchKey</code>, which the store turns into <code>null</code>.</p>
+        <p class="why"><b>Why</b> Tell "waiting for the second file" apart from "access denied".</p>
+        <p class="where">template.yaml · ListBucketSoMissingFilesReturn404 · handler.js s3Store().get</p>
+      </article>
+      <article class="note p">
+        <span class="tag">Infrastructure</span>
+        <h3>Bucket name from <code>!Sub</code></h3>
+        <p><code>leaver-check-${AWS::AccountId}-${AWS::Region}</code>. The function policy uses that string, not <code>!Ref</code> to the bucket.</p>
+        <p class="why"><b>Why</b> No circular dependency between bucket, its notification and the function role.</p>
+        <p class="where">template.yaml · RunsBucket.BucketName</p>
+      </article>
+      <article class="note g">
+        <span class="tag">Reliability</span>
+        <h3>Recursion guard</h3>
+        <p>Notifications filter on prefix <code>runs/</code> and suffix <code>hr.csv</code> or <code>app.csv</code>. <code>runFolder()</code> ignores every other key.</p>
+        <p class="why"><b>Why</b> Writing results can't start another run. Two layers, one in AWS and one in code.</p>
+        <p class="where">template.yaml · Events · handler.js runFolder()</p>
+      </article>
+      <article class="note b wide">
+        <span class="tag">Data handling</span>
+        <h3>Data protection</h3>
+        <ul>
+          <li>Public access blocked (all four settings)</li>
+          <li>Ownership: <code>BucketOwnerEnforced</code> (no ACLs)</li>
+          <li>SSE-S3 encryption (<code>AES256</code>)</li>
+          <li>Bucket policy denies any request without HTTPS</li>
+          <li><code>runs/</code> expires after <code>RetentionDays</code> (default 30)</li>
+          <li>Log group keeps 30 days; logs hold counts only, never names or emails</li>
+        </ul>
+        <p class="why"><b>Why</b> The bucket holds employee names and emails. Keep it private, encrypted and short-lived.</p>
+        <p class="where">template.yaml · RunsBucket, RunsBucketPolicy, LeaverCheckLogs · handler.js log.info</p>
+      </article>
+      <article class="note">
+        <span class="tag">Infrastructure</span>
+        <h3>Runtime: nodejs24.x on arm64</h3>
+        <p>cfn-lint flagged <code>nodejs20.x</code> as deprecated, so it moved to 24. 512 MB, 60 s timeout.</p>
+        <p class="why"><b>Why</b> CI lints the template, so the deprecation showed up before any deploy.</p>
+        <p class="where">template.yaml · Runtime, Architectures</p>
+      </article>
+      <article class="note p">
+        <span class="tag">Testing</span>
+        <h3>Testable without AWS</h3>
+        <p><code>createHandler({ store, log })</code> takes the storage. Tests pass an in-memory store. One test checks Lambda findings deep-equal the CLI's <code>reconcile()</code>.</p>
+        <p class="why"><b>Why</b> Runs in CI with no AWS account, and proves one engine behind every front end.</p>
+        <p class="where">test/lambda.test.js · memoryStore()</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">5</span><h2>60-second summary and likely questions</h2></div>
+    <div class="talk">
+      <div class="card">
+        <h3>Talk track</h3>
+        <span class="timer">about 60 seconds · refer to sections 1, 2 and 4</span>
+        <ol class="track">
+          <li><span>Leaver check compares an HR export with an app's user list. It flags leavers who still have active accounts, accounts that match no one, and accounts nobody uses, ready for an access review.</span></li>
+          <li><span>First I put CI on all four of my identity tools: <code>node --test</code> on Node 20, 22 and 24 for every push and pull request, with a read-only token and a badge on each README.</span></li>
+          <li><span>Then I added a Lambda version. Drop <code>hr.csv</code> and <code>app.csv</code> in one S3 folder. When both are there, it runs the same <code>reconcile()</code> as the browser page, CLI and Claude skill, and writes <code>review.csv</code> and <code>summary.json</code> next to them.</span></li>
+          <li><span>It's HR data, so it's least privilege: three files readable, two writable, no delete. Encrypted, HTTPS only, deleted after 30 days, and the logs hold counts only.</span></li>
+          <li><span>Two details worth calling out: ListBucket so a missing file is a 404, not a 403, and suffix filters so the output can't retrigger the function. 22 tests pass. It is not deployed yet; the next step is <code>sam deploy</code>.</span></li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>Likely follow-ups</h3>
+        <div class="qa">
+          <div>
+            <p class="q">"Isn't ListBucket extra access you don't need?"</p>
+            <p class="a">It's limited to the <code>runs/*</code> prefix. Without it, a missing key returns 403, so the function couldn't tell "second file not uploaded yet" from a real permission failure. With it, missing means 404, and the run returns <code>status: "waiting"</code>.</p>
+          </div>
+          <div>
+            <p class="q">"How do you know Lambda gives the same answer as the CLI?"</p>
+            <p class="a">It imports the same <code>reconcile()</code> from <code>skill/leaver-check/scripts/leaver-check.js</code>. A test runs both on the example files and asserts the findings and summary are deep-equal.</p>
+          </div>
+          <div>
+            <p class="q">"Is it running in production?"</p>
+            <p class="a">No, it hasn't been deployed. The template passes cfn-lint in CI, and 10 tests cover the handler against an in-memory store. Next step: <code>sam build &amp;&amp; sam deploy --guided</code> in <code>aws/</code>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">6</span><h2>Production readiness</h2></div>
+    <p class="sub">Checked 24 Nov 2026. The browser page, command line and Claude skill are ready to use. The Lambda version builds and passes its tests, but it has not run in a live AWS account.</p>
+    <div class="ready">
+      <article class="note">
+        <span class="pill good">Ready now</span>
+        <h3>Browser page, command line, Claude skill</h3>
+        <ul>
+          <li>No dependencies to install</li>
+          <li>22 tests pass with <code>npm test</code></li>
+          <li>CI runs them on Node 20, 22 and 24 for every push and pull request</li>
+        </ul>
+      </article>
+      <article class="note">
+        <span class="pill info">Lambda: checked without AWS</span>
+        <h3>Template and package</h3>
+        <ul>
+          <li><code>sam validate --lint</code>: valid template</li>
+          <li><code>sam build</code>: succeeds</li>
+          <li>Built package run on the example files with an in-memory store: 3 leavers, 2 orphan accounts, 4 dormant, the same as the CLI</li>
+          <li>10 handler tests and <code>cfn-lint</code> run in CI</li>
+        </ul>
+      </article>
+    </div>
+    <div class="gaps">
+      <h3>Gaps before production use on AWS</h3>
+      <div class="gap gaphead"><span>Priority</span><span>Gap</span><span>Fix</span></div>
+      <div class="gap">
+        <span class="pill high">High</span>
+        <div><h4>Never deployed</h4><p>The S3 trigger, S3's permission to invoke the function, the 404-instead-of-403 behavior and <code>nodejs24.x</code> in a given region are only proven by a real deploy.</p></div>
+        <p class="fix"><b>Deploy to a test account</b> and run the example files end to end.</p>
+      </div>
+      <div class="gap">
+        <span class="pill high">High</span>
+        <div><h4>Failures are silent</h4><p>A failed run, such as one with a broken <code>config.json</code>, is retried twice and then dropped. The reason is only in CloudWatch Logs.</p></div>
+        <p class="fix"><b>Add an on-failure destination</b> (SQS queue) and an alarm on function errors.</p>
+      </div>
+      <div class="gap">
+        <span class="pill med">Medium</span>
+        <div><h4>One stack per account and region</h4><p>The bucket name is built from account and region, so a second deploy there fails because the name is taken.</p></div>
+        <p class="fix"><b>Add the stack name</b> or a parameter to the bucket name.</p>
+      </div>
+      <div class="gap">
+        <span class="pill med">Medium</span>
+        <div><h4>No access for other people</h4><p>The template doesn't grant anyone upload or download rights. The deployer's own admin access works.</p></div>
+        <p class="fix"><b>Add a role or policy</b> for HR and app owners, limited to <code>runs/</code>.</p>
+      </div>
+      <div class="gap">
+        <span class="pill low">Low</span>
+        <div><h4>Untested at scale</h4><p>Both files are read into memory, with 512 MB and a 60-second limit. Nobody has tried a large export.</p></div>
+        <p class="fix"><b>Test with a large export</b> and raise memory or timeout if needed.</p>
+      </div>
+      <div class="gap">
+        <span class="pill low">Low</span>
+        <div><h4>Package includes the whole repo</h4><p><code>CodeUri: ../</code> bundles the web page, tests and examples too (about 164 KB).</p></div>
+        <p class="fix"><b>Package only</b> <code>aws/</code> and the shared script.</p>
+      </div>
+    </div>
+    <div class="card next">
+      <h3>Next steps</h3>
+      <ol>
+        <li>Add the on-failure queue and error alarm to <code>aws/template.yaml</code>.</li>
+        <li>Deploy once to a test AWS account with <code>sam build &amp;&amp; sam deploy --guided</code> and run the example files.</li>
+        <li>Until then, note in the README that the AWS version hasn't been tested in a live account.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    <p>Sources: <code>.github/workflows/test.yml</code> in leaver-check, saml-check, oidc-config-check and jwt-lint; <code>aws/handler.js</code>, <code>aws/template.yaml</code>, <code>test/lambda.test.js</code> and README section "4. On AWS Lambda" in leaver-check.</p>
+    <p>Checked 24 Nov 2026: <code>npm test</code> gives 22 pass, 0 fail; leaver-check PR #1 checks (Node 20, 22, 24, Lint the AWS template) all succeeded. <code>sam validate --lint</code> and <code>sam build</code> (SAM CLI 1.174.0) succeeded.</p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script>
+(function () {
+  const NS = "http://www.w3.org/2000/svg";
+  const C = (n) => "var(--" + n + ")";
+  const gen = window.rough ? rough.generator() : null;
+  let seed = 7;
+
+  function board(id) {
+    const svg = document.getElementById(id);
+    const shapes = document.createElementNS(NS, "g");
+    const labels = document.createElementNS(NS, "g");
+    svg.append(shapes, labels);
+
+    function put(drawable, dash) {
+      if (!gen) return;
+      for (const p of gen.toPaths(drawable)) {
+        const el = document.createElementNS(NS, "path");
+        el.setAttribute("d", p.d);
+        el.style.stroke = p.stroke;
+        el.style.strokeWidth = p.strokeWidth;
+        el.style.fill = p.fill || "none";
+        el.style.strokeLinecap = "round";
+        if (dash && p.fill === "none" && p.stroke === drawable.options.stroke) el.style.strokeDasharray = dash;
+        shapes.appendChild(el);
+      }
+    }
+    const opt = (o = {}) => ({
+      stroke: C(o.color || "ink"), strokeWidth: o.w ? o.w * 0.7 : 1.4, roughness: 0, bowing: 0, disableMultiStroke: true, seed: seed++,
+      fill: o.fill ? C(o.fill) : undefined, fillStyle: "solid",
+    });
+    const api = {
+      rect(x, y, w, h, o = {}) { put(gen && gen.rectangle(x, y, w, h, opt(o)), o.dash ? "6 5" : null); },
+      circle(x, y, d, o = {}) { put(gen && gen.circle(x, y, d, opt(o))); },
+      line(x1, y1, x2, y2, o = {}) { put(gen && gen.line(x1, y1, x2, y2, opt(o)), o.dash ? "5 5" : null); },
+      arrow(x1, y1, x2, y2, o = {}) {
+        api.line(x1, y1, x2, y2, o);
+        const a = Math.atan2(y2 - y1, x2 - x1), L = 10, s = 0.38;
+        put(gen && gen.polygon([[x2, y2], [x2 - L * Math.cos(a - s), y2 - L * Math.sin(a - s)], [x2 - L * Math.cos(a + s), y2 - L * Math.sin(a + s)]],
+          opt({ ...o, fill: o.color || "ink" })));
+      },
+      text(x, y, str, cls = "", anchor = "middle") {
+        const t = document.createElementNS(NS, "text");
+        t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("text-anchor", anchor);
+        if (cls) t.setAttribute("class", cls);
+        t.textContent = str; labels.appendChild(t); return t;
+      },
+      step(x, y, n, color = "blue") {
+        api.circle(x, y, 26, { color, fill: "panel", fillStyle: "solid", w: 2 });
+        api.text(x, y + 5.5, String(n), "b s nob " + color);
+      },
+    };
+    return api;
+  }
+
+  /* ---------- Board 1: four repos -> Actions matrix -> badges ---------- */
+  (function () {
+    const b = board("b1");
+    const repos = ["leaver-check", "saml-check", "oidc-config-check", "jwt-lint"];
+    const ys = [30, 112, 194, 276];
+    repos.forEach((r, i) => {
+      const y = ys[i];
+      b.rect(30, y, 210, 62, { color: "ink" });
+      b.text(135, y + 28, r, "b");
+      b.text(135, y + 50, i === 0 ? "PR #1 · + AWS template lint" : "PR #1", "s mut");
+      b.arrow(244, y + 31, 336, 150 + i * 40, { color: "muted", w: 1.6 });
+    });
+    // Actions box
+    b.rect(340, 24, 360, 366, { color: "blue", w: 2.4 });
+    b.text(520, 58, "GitHub Actions", "b blue");
+    b.text(520, 82, ".github/workflows/test.yml", "m");
+    b.text(520, 110, "on: push to main · pull_request", "s");
+    b.text(520, 132, "permissions: contents: read", "s red");
+    b.text(520, 162, "job: test  (matrix, fail-fast: false)", "s mut");
+    [20, 22, 24].forEach((v, i) => {
+      const x = 362 + i * 112;
+      b.rect(x, 178, 94, 50, { color: "blue", fill: "blue-soft" });
+      b.text(x + 47, 209, "Node " + v, "b");
+    });
+    b.text(520, 262, "npm test  →  node --test", "m");
+    b.rect(362, 288, 316, 80, { color: "amber", dash: true });
+    b.text(520, 316, "leaver-check only: aws-template job", "s amber");
+    b.text(520, 344, "cfn-lint aws/template.yaml", "m");
+    // Badges
+    ys.forEach((y, i) => {
+      const by = y + 13;
+      b.arrow(704, 206, 770, by + 18, { color: "green", w: 1.6 });
+      b.rect(776, by, 74, 36, { color: "ink", fill: "grey-soft", w: 1.6 });
+      b.text(813, by + 24, "Tests", "s");
+      b.rect(850, by, 112, 36, { color: "green", fill: "green-soft", w: 1.8 });
+      b.text(906, by + 24, "passing", "s green");
+    });
+    b.text(869, 370, "4 / 4 PRs green → squash-merged", "s green");
+    b.text(869, 392, "24 Nov 2026", "s mut");
+  })();
+
+  /* ---------- Board 2: architecture ---------- */
+  (function () {
+    const b = board("b2");
+    // You
+    b.rect(20, 252, 120, 80);
+    b.text(80, 284, "You", "b");
+    b.text(80, 310, "aws s3 cp", "m");
+    b.arrow(144, 292, 196, 292, { w: 2 });
+    b.text(170, 280, "upload", "s");
+    // Bucket
+    b.rect(200, 90, 280, 420, { color: "blue", w: 2.4, fill: "blue-soft", angle: 60 });
+    b.rect(216, 165, 248, 245, { color: "ink", fill: "panel", fillStyle: "solid" });
+    b.text(340, 122, "S3 bucket", "b blue");
+    b.text(340, 148, "leaver-check-<acct>-<region>", "m");
+    b.text(230, 192, "runs/<name>/", "m b", "start");
+    const rows = [["hr.csv", "upload", "mut"], ["app.csv", "upload", "mut"], ["config.json", "optional", "mut"], ["review.csv", "output", "green"], ["summary.json", "output", "green"]];
+    rows.forEach(([f, tag, cls], i) => {
+      const y = 228 + i * 34 + (i > 2 ? 14 : 0);
+      b.text(232, y, f, "m", "start");
+      b.text(452, y, tag, "s " + cls, "end");
+    });
+    b.line(228, 318, 452, 318, { color: "muted", w: 1.2, dash: true });
+    b.text(340, 444, "SSE-S3 · HTTPS only · no public access", "s");
+    b.text(340, 470, "auto-delete after RetentionDays (30)", "s");
+    // Event filter
+    b.rect(560, 26, 210, 100, { color: "amber", w: 2.2, fill: "amber-soft" });
+    b.text(665, 56, "S3 event filter", "b amber");
+    b.text(665, 82, "prefix runs/", "m");
+    b.text(665, 106, "suffix hr.csv | app.csv", "m");
+    b.arrow(482, 118, 554, 82, { color: "amber" });
+    b.text(500, 82, "ObjectCreated", "s amber");
+    // Direct invoke
+    b.text(980, 52, "or invoke directly", "s mut");
+    b.text(980, 76, "{bucket, prefix}", "m");
+    b.arrow(960, 90, 868, 214, { color: "muted", dash: true, w: 1.6 });
+    // IAM boundary
+    b.rect(520, 170, 570, 392, { color: "red", dash: true, w: 2.2 });
+    b.text(536, 548, "IAM role: only these arrows are allowed", "s red", "start");
+    // Lambda
+    b.rect(720, 220, 170, 200, { color: "ink", w: 2.4, fill: "amber-soft", angle: 30 });
+    b.arrow(680, 128, 780, 216, { color: "amber" });
+    b.text(805, 258, "Lambda", "b");
+    b.text(805, 284, "aws/handler.js", "m");
+    b.text(805, 312, "nodejs24.x · arm64", "s");
+    b.text(805, 336, "512 MB · 60 s", "s mut");
+    // reconcile
+    b.rect(930, 220, 150, 100, { color: "green", w: 2.2, fill: "green-soft" });
+    b.text(1005, 252, "reconcile()", "m b");
+    b.text(1005, 278, "same code as page,", "s");
+    b.text(1005, 300, "CLI and skill", "s");
+    b.arrow(893, 270, 926, 270, { color: "green" });
+    // Logs
+    b.rect(930, 372, 150, 92, { color: "muted" });
+    b.text(1005, 400, "CloudWatch Logs", "s b");
+    b.text(1005, 424, "counts only", "s");
+    b.text(1005, 448, "kept 30 days", "s mut");
+    b.arrow(893, 400, 926, 410, { color: "muted", w: 1.6 });
+    // Permission arrows
+    b.arrow(484, 245, 716, 245, { color: "blue" });
+    b.text(600, 214, "s3:GetObject", "s blue");
+    b.text(600, 234, "hr.csv · app.csv · config.json", "m");
+    b.arrow(716, 320, 484, 320, { color: "green" });
+    b.text(600, 342, "s3:PutObject", "s green");
+    b.text(600, 362, "review.csv · summary.json", "m");
+    b.arrow(716, 398, 484, 398, { color: "muted", dash: true, w: 1.6 });
+    b.text(600, 420, "s3:ListBucket on runs/*", "s");
+    b.text(600, 440, "missing file = 404, not 403", "s mut");
+    b.text(805, 470, "✗ no s3:DeleteObject", "s red");
+  })();
+
+  /* ---------- Board 3: sequence ---------- */
+  (function () {
+    const b = board("b3");
+    const X = { you: 100, s3: 360, fn: 640, rc: 900 };
+    // waiting region
+    b.rect(18, 90, 964, 268, { color: "amber", dash: true, w: 1.8 });
+    b.text(966, 112, "first file only: wait", "s amber", "end");
+    // heads + lifelines
+    [["you", "You"], ["s3", "S3 bucket"], ["fn", "Lambda"], ["rc", "reconcile()"]].forEach(([k, label]) => {
+      b.line(X[k], 68, X[k], 706, { color: "muted", w: 1.3, dash: true, rough: 0.6 });
+      b.rect(X[k] - 75, 18, 150, 48, { color: k === "fn" ? "ink" : k === "s3" ? "blue" : k === "rc" ? "green" : "ink", fill: "panel", fillStyle: "solid" });
+      b.text(X[k], 49, label, k === "rc" ? "m b" : "b");
+    });
+    function msg(n, from, to, y, label, o = {}) {
+      const x1 = X[from], x2 = X[to], dir = Math.sign(x2 - x1);
+      b.arrow(x1 + dir * 4, y, x2 - dir * 4, y, { color: o.color || "ink", dash: o.dash, w: 2 });
+      b.step(x1 + dir * 26, y, n, o.color || "blue");
+      b.text((x1 + x2) / 2 + dir * 12, y - 10, label, o.cls || "s");
+    }
+    msg(1, "you", "s3", 136, "PUT runs/q4/hr.csv");
+    msg(2, "s3", "fn", 180, "S3 event: hr.csv");
+    msg(3, "fn", "s3", 224, "GET hr.csv, app.csv, config.json");
+    msg(4, "s3", "fn", 268, "app.csv → 404 NoSuchKey → null", { color: "red", dash: true, cls: "s red" });
+    b.rect(560, 288, 320, 56, { color: "amber", fill: "panel", fillStyle: "solid" });
+    b.step(584, 316, 5, "amber");
+    b.text(606, 312, "status: waiting · missing: app.csv", "s", "start");
+    b.text(606, 334, "writes nothing, run ends", "s mut", "start");
+    msg(6, "you", "s3", 412, "PUT runs/q4/app.csv");
+    msg(7, "s3", "fn", 456, "S3 event: app.csv");
+    msg(8, "fn", "s3", 500, "GET all three: both CSVs found");
+    msg(9, "fn", "rc", 544, "reconcile(hr, app, options)", { color: "green", cls: "s m" });
+    msg(10, "rc", "fn", 588, "findings + summary", { color: "green", dash: true, cls: "s green" });
+    msg(11, "fn", "s3", 632, "PUT review.csv + summary.json", { color: "green", cls: "s green" });
+    // 12: no event
+    b.arrow(364, 682, 556, 682, { color: "red", dash: true, w: 2 });
+    b.step(390, 682, 12, "red");
+    b.line(566, 670, 590, 694, { color: "red", w: 2.6 });
+    b.line(590, 670, 566, 694, { color: "red", w: 2.6 });
+    b.text(478, 672, "no event: suffix filter", "s red");
+    b.text(660, 688, "+ runFolder() ignores other keys", "s red", "start");
+  })();
+})();
+</script>
+</body>
+</html>
