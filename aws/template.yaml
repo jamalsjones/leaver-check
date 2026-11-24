@@ -22,9 +22,13 @@ Resources:
   RunsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      # The name is built from the account and region, so the function's policy can
-      # refer to it as a string without a circular reference to the bucket.
-      BucketName: !Sub "leaver-check-${AWS::AccountId}-${AWS::Region}"
+      # The name is built from the account, region and the first block of this stack's
+      # unique ID, so the function's policy can refer to it as a string without a
+      # circular reference to the bucket, and several stacks can share an account and
+      # region. Each !Sub below repeats the same expression.
+      BucketName: !Sub
+        - "leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}"
+        - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -90,13 +94,21 @@ Resources:
               Effect: Allow
               Action: s3:GetObject
               Resource:
-                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/hr.csv"
-                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/app.csv"
-                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/config.json"
+                - !Sub
+                    - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}/runs/*/hr.csv"
+                    - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
+                - !Sub
+                    - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}/runs/*/app.csv"
+                    - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
+                - !Sub
+                    - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}/runs/*/config.json"
+                    - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
             - Sid: ListBucketSoMissingFilesReturn404
               Effect: Allow
               Action: s3:ListBucket
-              Resource: !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}"
+              Resource: !Sub
+                  - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}"
+                  - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
               Condition:
                 StringLike:
                   s3:prefix: "runs/*"
@@ -104,8 +116,12 @@ Resources:
               Effect: Allow
               Action: s3:PutObject
               Resource:
-                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/review.csv"
-                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/summary.json"
+                - !Sub
+                    - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}/runs/*/review.csv"
+                    - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
+                - !Sub
+                    - "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}/runs/*/summary.json"
+                    - StackSuffix: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref "AWS::StackId"]]]]
       Events:
         HrUploaded:
           Type: S3
