@@ -10,6 +10,13 @@ Parameters:
     Default: 30
     MinValue: 1
     Description: Days to keep uploaded HR and app files and their results before S3 deletes them.
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Optional. An email address to notify when a run fails. Leave blank to skip email.
+
+Conditions:
+  SendAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
 
 Resources:
   RunsBucket:
@@ -67,6 +74,14 @@ Resources:
       Timeout: 60
       LoggingConfig:
         LogGroup: !Ref LeaverCheckLogs
+      # A failed run is retried twice, then its S3 event goes to a queue instead of
+      # being dropped. SAM adds the sqs:SendMessage permission for this destination.
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt FailedRunsQueue.Arn
       Policies:
         # Least privilege: read inputs and write the two result files, nothing else.
         - Version: "2012-10-17"
@@ -117,6 +132,57 @@ Resources:
                   - Name: suffix
                     Value: app.csv
 
+  # Failed runs land here: the S3 event (bucket and key) and the error message,
+  # never file contents. Kept 14 days, the SQS maximum.
+  FailedRunsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  FailedRunsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref FailedRunsQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "sqs:*"
+            Resource: !GetAtt FailedRunsQueue.Arn
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # Fires on any function error, including attempts that a retry later fixes.
+  ErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A Leaver check run failed. See the function's logs and the failed-runs queue.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LeaverCheckFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref "AWS::NoValue"]
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: SendAlarmEmail
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlarmEmail
+
   LeaverCheckLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -129,3 +195,8 @@ Outputs:
     Value: !Ref RunsBucket
   FunctionName:
     Value: !Ref LeaverCheckFunction
+  FailedRunsQueueUrl:
+    Description: Runs that failed after two retries are sent here.
+    Value: !Ref FailedRunsQueue
+  ErrorsAlarmName:
+    Value: !Ref ErrorsAlarm

@@ -182,7 +182,14 @@ footer p { margin: 0; max-width: 90ch; }
         <p class="why"><b>Why</b> Writing results can't start another run. Two layers, one in AWS and one in code.</p>
         <p class="where">template.yaml · Events · handler.js runFolder()</p>
       </article>
-      <article class="note b wide">
+      <article class="note">
+        <span class="tag">Reliability</span>
+        <h3>Failures don't disappear</h3>
+        <p>A failed run is retried twice, then its S3 event and the error go to an SQS queue kept 14 days. A CloudWatch alarm fires on any function error, with optional email through <code>AlarmEmail</code>.</p>
+        <p class="why"><b>Why</b> S3 invokes the function asynchronously. Without a destination, a failed run is dropped and nobody notices the missing review sheet.</p>
+        <p class="where">template.yaml · EventInvokeConfig, FailedRunsQueue, ErrorsAlarm</p>
+      </article>
+      <article class="note">
         <span class="tag">Data handling</span>
         <h3>Data protection</h3>
         <ul>
@@ -234,6 +241,7 @@ footer p { margin: 0; max-width: 90ch; }
           <li><code>sam validate --lint</code>: valid template</li>
           <li><code>sam build</code>: succeeds</li>
           <li>Built package run on the example files with an in-memory store: 3 leavers, 2 orphan accounts, 4 dormant, the same as the CLI</li>
+          <li>Failed runs go to an SQS queue, and an alarm fires on function errors</li>
           <li>10 handler tests and <code>cfn-lint</code> run in CI</li>
         </ul>
       </article>
@@ -243,13 +251,8 @@ footer p { margin: 0; max-width: 90ch; }
       <div class="gap gaphead"><span>Priority</span><span>Gap</span><span>Suggested fix</span></div>
       <div class="gap">
         <span class="pill high">High</span>
-        <div><h4>Never deployed</h4><p>The S3 trigger, S3's permission to invoke the function, the 404-instead-of-403 behavior and <code>nodejs24.x</code> in a given region are only proven by a real deploy.</p></div>
+        <div><h4>Never deployed</h4><p>The S3 trigger, S3's permission to invoke the function, the failure queue, the 404-instead-of-403 behavior and <code>nodejs24.x</code> in a given region are only proven by a real deploy.</p></div>
         <p class="fix"><b>Deploy to a test account</b> and run the example files end to end.</p>
-      </div>
-      <div class="gap">
-        <span class="pill high">High</span>
-        <div><h4>Failures are silent</h4><p>A failed run, such as one with a broken <code>config.json</code>, is retried twice and then dropped. The reason is only in CloudWatch Logs.</p></div>
-        <p class="fix"><b>Add an on-failure destination</b> (SQS queue) and an alarm on function errors.</p>
       </div>
       <div class="gap">
         <span class="pill med">Medium</span>
@@ -449,6 +452,12 @@ footer p { margin: 0; max-width: 90ch; }
     b.text(1005, 424, "counts only", "s");
     b.text(1005, 448, "kept 30 days", "s mut");
     b.arrow(893, 400, 926, 410, { color: "muted", w: 1.6 });
+    // Failed-runs queue
+    b.rect(930, 476, 150, 78, { color: "red", fill: "red-soft" });
+    b.text(1005, 500, "Failed-runs queue", "s b");
+    b.text(1005, 522, "SQS, after 2 retries", "s");
+    b.text(1005, 543, "alarm on Errors", "s mut");
+    b.arrow(872, 422, 926, 492, { color: "red", dash: true, w: 1.6 });
     // Permission arrows
     b.arrow(484, 245, 716, 245, { color: "blue" });
     b.text(600, 214, "s3:GetObject", "s blue");
