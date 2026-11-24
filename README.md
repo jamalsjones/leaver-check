@@ -1,5 +1,7 @@
 # Leaver check
 
+[![Tests](https://github.com/jamalsjones/leaver-check/actions/workflows/test.yml/badge.svg)](https://github.com/jamalsjones/leaver-check/actions/workflows/test.yml)
+
 Compare an HR export with one application's user list and find the accounts an access review should look at first:
 
 | Finding | Severity | What it means |
@@ -13,9 +15,9 @@ Compare an HR export with one application's user list and find the accounts an a
 
 It writes a review sheet (CSV) with the finding, the evidence, a recommended action, and empty **Decision**, **Reviewer** and **Notes** columns for the people doing the review.
 
-## Three ways to run it
+## Four ways to run it
 
-All three use the same script, [`skill/leaver-check/scripts/leaver-check.js`](skill/leaver-check/scripts/leaver-check.js): one file, no dependencies. The matching is identical whichever you pick.
+All four use the same script, [`skill/leaver-check/scripts/leaver-check.js`](skill/leaver-check/scripts/leaver-check.js): one file, no dependencies. The matching is identical whichever you pick.
 
 ### 1. In the browser
 
@@ -45,6 +47,35 @@ The `skill/leaver-check` folder is an [Agent Skill](https://docs.claude.com/en/d
 - **Claude apps:** zip the `skill/leaver-check` folder and upload it as a custom skill in Claude's settings.
 
 **About your data:** in the browser and on the command line, nothing leaves your machine. With the skill, Claude reads the script's output and whatever rows it needs to explain a finding, so names, emails and employment status pass through Claude. Use it only where your organization allows employee data to be processed by Claude, and prefer the browser or command line when it doesn't.
+
+### 4. On AWS Lambda
+
+`aws/` deploys Leaver check as a serverless job with the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html). Upload two files into the same folder of the bucket and the review sheet appears next to them:
+
+```
+runs/payroll-2026-q4/hr.csv         you upload
+runs/payroll-2026-q4/app.csv        you upload
+runs/payroll-2026-q4/config.json    optional: {"appName": "Payroll", "dormantDays": 90, "asOf": "2026-11-15"}
+runs/payroll-2026-q4/review.csv     written by the function
+runs/payroll-2026-q4/summary.json   written by the function: counts, warnings and every finding
+```
+
+```bash
+cd aws
+sam build && sam deploy --guided      # creates the bucket, function and trigger
+aws s3 cp hr.csv  s3://<BucketName>/runs/payroll-2026-q4/hr.csv
+aws s3 cp app.csv s3://<BucketName>/runs/payroll-2026-q4/app.csv
+aws s3 cp s3://<BucketName>/runs/payroll-2026-q4/review.csv .
+```
+
+It runs the same `reconcile()` as the other three, so the findings are identical. Because the bucket holds employee data, the template locks it down:
+
+- **Least privilege:** the function can read only `hr.csv`, `app.csv` and `config.json` under `runs/`, and write only `review.csv` and `summary.json`. It can't delete anything or touch other paths.
+- **No public access**, bucket-owner-enforced ownership, encryption at rest, and a bucket policy that refuses anything but HTTPS.
+- **Short retention:** S3 deletes everything under `runs/` after 30 days (`RetentionDays` to change it). Logs keep 30 days too, and the function logs counts only, never names or emails.
+- **No loops:** only uploads named `hr.csv` or `app.csv` trigger a run, so writing results never starts another one.
+
+You can also invoke it directly with `{"bucket": "<BucketName>", "prefix": "runs/payroll-2026-q4/"}`.
 
 ## Getting the files
 
