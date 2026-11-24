@@ -19,6 +19,8 @@ It writes a review sheet (CSV) with the finding, the evidence, a recommended act
 
 All four use the same script, [`skill/leaver-check/scripts/leaver-check.js`](skill/leaver-check/scripts/leaver-check.js): one file, no dependencies. The matching is identical whichever you pick.
 
+For diagrams of the CI setup and the AWS version, the reasoning behind each design choice, and what's left before production use on AWS, see the [technical walkthrough](https://jamalsjones.github.io/leaver-check/docs/walkthrough.html) ([source](docs/walkthrough.html)).
+
 ### 1. In the browser
 
 [jamalsjones.github.io/leaver-check](https://jamalsjones.github.io/leaver-check/). Drop in the two CSVs and download the review sheet. The files are read in the page and never uploaded. Try the sample files first.
