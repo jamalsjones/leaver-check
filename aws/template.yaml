@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Leaver check on AWS. Upload hr.csv and app.csv to runs/<name>/ in the bucket and
+  the function writes review.csv and summary.json next to them.
+
+Parameters:
+  RetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    Description: Days to keep uploaded HR and app files and their results before S3 deletes them.
+
+Resources:
+  RunsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # The name is built from the account and region, so the function's policy can
+      # refer to it as a string without a circular reference to the bucket.
+      BucketName: !Sub "leaver-check-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-runs
+            Status: Enabled
+            Prefix: runs/
+            ExpirationInDays: !Ref RetentionDays
+
+  RunsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref RunsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt RunsBucket.Arn
+              - !Sub "${RunsBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  LeaverCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Reconciles an HR export with an app's user list for an access review.
+      CodeUri: ../
+      Handler: aws/handler.handler
+      Runtime: nodejs24.x
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 60
+      LoggingConfig:
+        LogGroup: !Ref LeaverCheckLogs
+      Policies:
+        # Least privilege: read inputs and write the two result files, nothing else.
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: ReadRunInputs
+              Effect: Allow
+              Action: s3:GetObject
+              Resource:
+                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/hr.csv"
+                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/app.csv"
+                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/config.json"
+            - Sid: ListBucketSoMissingFilesReturn404
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}"
+              Condition:
+                StringLike:
+                  s3:prefix: "runs/*"
+            - Sid: WriteRunResults
+              Effect: Allow
+              Action: s3:PutObject
+              Resource:
+                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/review.csv"
+                - !Sub "arn:aws:s3:::leaver-check-${AWS::AccountId}-${AWS::Region}/runs/*/summary.json"
+      Events:
+        HrUploaded:
+          Type: S3
+          Properties:
+            Bucket: !Ref RunsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: runs/
+                  - Name: suffix
+                    Value: hr.csv
+        AppUploaded:
+          Type: S3
+          Properties:
+            Bucket: !Ref RunsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: runs/
+                  - Name: suffix
+                    Value: app.csv
+
+  LeaverCheckLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/leaver-check-${AWS::StackName}"
+      RetentionInDays: 30
+
+Outputs:
+  BucketName:
+    Description: Upload runs/<name>/hr.csv and runs/<name>/app.csv here.
+    Value: !Ref RunsBucket
+  FunctionName:
+    Value: !Ref LeaverCheckFunction

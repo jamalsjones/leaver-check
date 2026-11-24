@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+# AWS SAM build output
+aws/.aws-sam/
+aws/samconfig.toml
