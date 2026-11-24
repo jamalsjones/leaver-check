@@ -64,7 +64,7 @@ runs/payroll-2026-q4/summary.json   written by the function: counts, warnings an
 
 ```bash
 cd aws
-sam build && sam deploy --guided      # creates the bucket, function and trigger
+sam build && sam deploy --guided      # creates the bucket, function, trigger, failure queue and alarm
 aws s3 cp hr.csv  s3://<BucketName>/runs/payroll-2026-q4/hr.csv
 aws s3 cp app.csv s3://<BucketName>/runs/payroll-2026-q4/app.csv
 aws s3 cp s3://<BucketName>/runs/payroll-2026-q4/review.csv .
@@ -76,6 +76,7 @@ It runs the same `reconcile()` as the other three, so the findings are identical
 - **No public access**, bucket-owner-enforced ownership, encryption at rest, and a bucket policy that refuses anything but HTTPS.
 - **Short retention:** S3 deletes everything under `runs/` after 30 days (`RetentionDays` to change it). Logs keep 30 days too, and the function logs counts only, never names or emails.
 - **No loops:** only uploads named `hr.csv` or `app.csv` trigger a run, so writing results never starts another one.
+- **Failures don't disappear:** a run that fails is retried twice, then its S3 event and the error go to an SQS queue (`FailedRunsQueueUrl` in the stack outputs) and are kept 14 days. A CloudWatch alarm fires on any function error. Set `AlarmEmail` when you deploy to be emailed when it does; AWS sends a confirmation email first.
 
 You can also invoke it directly with `{"bucket": "<BucketName>", "prefix": "runs/payroll-2026-q4/"}`.
 
