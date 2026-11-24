@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <style>
-/* Layout: a single-column technical walkthrough, five numbered sections; diagrams scroll sideways on phones, cards stack. */
+/* Layout: a single-column technical walkthrough, six numbered sections; diagrams scroll sideways on phones, cards stack. */
 :root {
   /* Palette from jamalsjones.com: concrete ground, bone panels, graphite text, ink-blue accent, signal colors. */
   --bg: #e7eaeb;          /* concrete */
@@ -86,15 +86,8 @@ svg text.nob { stroke: none; }
 .note .where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
 .note ul { margin: 0; padding-left: 18px; font-size: 15px; display: grid; gap: 2px; }
 
-/* Talk track */
-.talk { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
-@media (max-width: 860px) { .talk { grid-template-columns: 1fr; } }
+/* FAQ */
 .card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; display: grid; gap: 12px; min-width: 0; }
-.card h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 20px; margin: 0; }
-.track { margin: 0; padding: 0; list-style: none; counter-reset: t; display: grid; gap: 12px; }
-.track li { counter-increment: t; display: grid; grid-template-columns: 30px 1fr; gap: 10px; font-size: 16px; }
-.track li::before { content: counter(t); font-family: var(--display); font-weight: 700; color: var(--blue); font-size: 18px; line-height: 1.4; }
-.timer { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .qa { display: grid; gap: 14px; }
 .q { font-family: var(--display); font-weight: 600; font-size: 17px; color: var(--ink); margin: 0; line-height: 1.3; }
 .a { margin: 0; font-size: 15.5px; }
@@ -107,7 +100,7 @@ svg text.nob { stroke: none; }
 .pill { display: inline-block; justify-self: start; font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; }
 .pill.good { color: var(--green); } .pill.info { color: var(--blue); } .pill.high { color: var(--red); } .pill.med { color: var(--amber); } .pill.low { color: var(--muted); }
 .gaps { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
-.gaps h3, .next h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 20px; margin: 0; }
+.gaps h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.01em; font-size: 20px; margin: 0; }
 .gaps > h3 { padding: 18px 22px 6px; }
 .gap { display: grid; grid-template-columns: 84px minmax(0, 1.25fr) minmax(0, 1fr); gap: 6px 20px; padding: 14px 22px; border-top: 1px solid var(--rule); align-items: start; }
 .gap:first-of-type { border-top: 0; }
@@ -117,8 +110,7 @@ svg text.nob { stroke: none; }
 .gap .fix b { color: var(--ink); font-weight: 600; }
 .gaphead { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 4px; padding-bottom: 8px; }
 @media (max-width: 760px) { .gap { grid-template-columns: 1fr; } .gaphead { display: none; } }
-.next { display: grid; gap: 10px; }
-.next ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+footer a { color: var(--blue); }
 footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 18px; }
 footer p { margin: 0; max-width: 90ch; }
 </style>
@@ -127,13 +119,13 @@ footer p { margin: 0; max-width: 90ch; }
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Technical walkthrough · 24 Nov 2026 · github.com/jamalsjones</div>
+    <div class="eyebrow">Technical walkthrough · github.com/jamalsjones/leaver-check</div>
     <h1>CI on four identity tools, and <span class="u">Leaver check on AWS Lambda</span></h1>
-    <p class="lede">Five diagrams covering what changed, how a single run works, and the reasoning behind each design choice, plus what is left before production use. Every label is taken from the code in the repositories.</p>
+    <p class="lede">How the shared CI setup and the AWS Lambda version of Leaver check work, how a single run flows, the reasoning behind each design choice, and the known gaps before production use on AWS. Every label is taken from the code in the repositories.</p>
     <div class="status">
-      <span class="chip ok"><span class="dot"></span>CI green on PR #1 in all 4 repos, squash-merged</span>
-      <span class="chip ok"><span class="dot"></span>22 / 22 tests pass (12 core + 10 Lambda)</span>
-      <span class="chip warn"><span class="dot"></span>Not deployed to AWS yet: <code>sam build &amp;&amp; sam deploy --guided</code></span>
+      <span class="chip ok"><span class="dot"></span>Tested on Node 20, 22 and 24</span>
+      <span class="chip ok"><span class="dot"></span>22 automated tests (12 core + 10 Lambda)</span>
+      <span class="chip warn"><span class="dot"></span>AWS version not yet run in a live account</span>
     </div>
   </header>
 
@@ -221,43 +213,10 @@ footer p { margin: 0; max-width: 90ch; }
     </div>
   </section>
 
-  <section>
-    <div class="bh"><span class="num">5</span><h2>60-second summary and likely questions</h2></div>
-    <div class="talk">
-      <div class="card">
-        <h3>Talk track</h3>
-        <span class="timer">about 60 seconds · refer to sections 1, 2 and 4</span>
-        <ol class="track">
-          <li><span>Leaver check compares an HR export with an app's user list. It flags leavers who still have active accounts, accounts that match no one, and accounts nobody uses, ready for an access review.</span></li>
-          <li><span>First I put CI on all four of my identity tools: <code>node --test</code> on Node 20, 22 and 24 for every push and pull request, with a read-only token and a badge on each README.</span></li>
-          <li><span>Then I added a Lambda version. Drop <code>hr.csv</code> and <code>app.csv</code> in one S3 folder. When both are there, it runs the same <code>reconcile()</code> as the browser page, CLI and Claude skill, and writes <code>review.csv</code> and <code>summary.json</code> next to them.</span></li>
-          <li><span>It's HR data, so it's least privilege: three files readable, two writable, no delete. Encrypted, HTTPS only, deleted after 30 days, and the logs hold counts only.</span></li>
-          <li><span>Two details worth calling out: ListBucket so a missing file is a 404, not a 403, and suffix filters so the output can't retrigger the function. 22 tests pass. It is not deployed yet; the next step is <code>sam deploy</code>.</span></li>
-        </ol>
-      </div>
-      <div class="card">
-        <h3>Likely follow-ups</h3>
-        <div class="qa">
-          <div>
-            <p class="q">"Isn't ListBucket extra access you don't need?"</p>
-            <p class="a">It's limited to the <code>runs/*</code> prefix. Without it, a missing key returns 403, so the function couldn't tell "second file not uploaded yet" from a real permission failure. With it, missing means 404, and the run returns <code>status: "waiting"</code>.</p>
-          </div>
-          <div>
-            <p class="q">"How do you know Lambda gives the same answer as the CLI?"</p>
-            <p class="a">It imports the same <code>reconcile()</code> from <code>skill/leaver-check/scripts/leaver-check.js</code>. A test runs both on the example files and asserts the findings and summary are deep-equal.</p>
-          </div>
-          <div>
-            <p class="q">"Is it running in production?"</p>
-            <p class="a">No, it hasn't been deployed. The template passes cfn-lint in CI, and 10 tests cover the handler against an in-memory store. Next step: <code>sam build &amp;&amp; sam deploy --guided</code> in <code>aws/</code>.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <section>
-    <div class="bh"><span class="num">6</span><h2>Production readiness</h2></div>
-    <p class="sub">Checked 24 Nov 2026. The browser page, command line and Claude skill are ready to use. The Lambda version builds and passes its tests, but it has not run in a live AWS account.</p>
+    <div class="bh"><span class="num">5</span><h2>Production readiness</h2></div>
+    <p class="sub">The browser page, command line and Claude skill are ready to use. The Lambda version builds and passes its tests, but it has not run in a live AWS account.</p>
     <div class="ready">
       <article class="note">
         <span class="pill good">Ready now</span>
@@ -280,8 +239,8 @@ footer p { margin: 0; max-width: 90ch; }
       </article>
     </div>
     <div class="gaps">
-      <h3>Gaps before production use on AWS</h3>
-      <div class="gap gaphead"><span>Priority</span><span>Gap</span><span>Fix</span></div>
+      <h3>Known gaps before production use on AWS</h3>
+      <div class="gap gaphead"><span>Priority</span><span>Gap</span><span>Suggested fix</span></div>
       <div class="gap">
         <span class="pill high">High</span>
         <div><h4>Never deployed</h4><p>The S3 trigger, S3's permission to invoke the function, the 404-instead-of-403 behavior and <code>nodejs24.x</code> in a given region are only proven by a real deploy.</p></div>
@@ -313,19 +272,28 @@ footer p { margin: 0; max-width: 90ch; }
         <p class="fix"><b>Package only</b> <code>aws/</code> and the shared script.</p>
       </div>
     </div>
-    <div class="card next">
-      <h3>Next steps</h3>
-      <ol>
-        <li>Add the on-failure queue and error alarm to <code>aws/template.yaml</code>.</li>
-        <li>Deploy once to a test AWS account with <code>sam build &amp;&amp; sam deploy --guided</code> and run the example files.</li>
-        <li>Until then, note in the README that the AWS version hasn't been tested in a live account.</li>
-      </ol>
+  </section>
+
+  <section>
+    <div class="bh"><span class="num">6</span><h2>Common questions</h2></div>
+    <div class="qa card">
+      <div>
+        <p class="q">Isn't s3:ListBucket more access than the function needs?</p>
+        <p class="a">It's limited to the <code>runs/*</code> prefix. Without it, S3 returns 403 for a missing key, so the function couldn't tell "second file not uploaded yet" from a real permission failure. With it, a missing file is a 404 and the run returns <code>status: "waiting"</code>.</p>
+      </div>
+      <div>
+        <p class="q">Does the Lambda give the same answer as the browser page and CLI?</p>
+        <p class="a">Yes. It imports the same <code>reconcile()</code> from <code>skill/leaver-check/scripts/leaver-check.js</code>, and a test runs both on the example files and checks the findings and summary are identical.</p>
+      </div>
+      <div>
+        <p class="q">Do names or emails end up in the logs?</p>
+        <p class="a">No. The function logs counts only, such as the number of leavers and orphan accounts. Names and emails stay in the bucket, and a test checks the log output.</p>
+      </div>
     </div>
   </section>
 
   <footer>
-    <p>Sources: <code>.github/workflows/test.yml</code> in leaver-check, saml-check, oidc-config-check and jwt-lint; <code>aws/handler.js</code>, <code>aws/template.yaml</code>, <code>test/lambda.test.js</code> and README section "4. On AWS Lambda" in leaver-check.</p>
-    <p>Checked 24 Nov 2026: <code>npm test</code> gives 22 pass, 0 fail; leaver-check PR #1 checks (Node 20, 22, 24, Lint the AWS template) all succeeded. <code>sam validate --lint</code> and <code>sam build</code> (SAM CLI 1.174.0) succeeded.</p>
+    <p>Source code: <a href="https://github.com/jamalsjones/leaver-check">github.com/jamalsjones/leaver-check</a> (MIT license). Labels in the diagrams are taken from <code>aws/template.yaml</code>, <code>aws/handler.js</code> and <code>.github/workflows/test.yml</code>.</p>
   </footer>
 </div>
 
@@ -392,8 +360,8 @@ footer p { margin: 0; max-width: 90ch; }
     repos.forEach((r, i) => {
       const y = ys[i];
       b.rect(30, y, 210, 62, { color: "ink" });
-      b.text(135, y + 28, r, "b");
-      b.text(135, y + 50, i === 0 ? "PR #1 · + AWS template lint" : "PR #1", "s mut");
+      b.text(135, i === 0 ? y + 28 : y + 37, r, "b");
+      if (i === 0) b.text(135, y + 50, "+ AWS template lint", "s mut");
       b.arrow(244, y + 31, 336, 150 + i * 40, { color: "muted", w: 1.6 });
     });
     // Actions box
@@ -421,8 +389,7 @@ footer p { margin: 0; max-width: 90ch; }
       b.rect(850, by, 112, 36, { color: "green", fill: "green-soft", w: 1.8 });
       b.text(906, by + 24, "passing", "s green");
     });
-    b.text(869, 370, "4 / 4 PRs green → squash-merged", "s green");
-    b.text(869, 392, "24 Nov 2026", "s mut");
+    b.text(869, 380, "Tests badge on each README", "s green");
   })();
 
   /* ---------- Board 2: architecture ---------- */
