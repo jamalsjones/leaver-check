@@ -70,6 +70,8 @@ aws s3 cp app.csv s3://<BucketName>/runs/payroll-2026-q4/app.csv
 aws s3 cp s3://<BucketName>/runs/payroll-2026-q4/review.csv .
 ```
 
+`<BucketName>` is in the stack outputs. Each stack gets its own bucket, named `leaver-check-<account>-<region>-<stack id>`, so you can deploy more than one stack in the same account and region, for example one per application.
+
 It runs the same `reconcile()` as the other three, so the findings are identical. Because the bucket holds employee data, the template locks it down:
 
 - **Least privilege:** the function can read only `hr.csv`, `app.csv` and `config.json` under `runs/`, and write only `review.csv` and `summary.json`. It can't delete anything or touch other paths.

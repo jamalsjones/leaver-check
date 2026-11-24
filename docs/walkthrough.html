@@ -171,8 +171,8 @@ footer p { margin: 0; max-width: 90ch; }
       <article class="note p">
         <span class="tag">Infrastructure</span>
         <h3>Bucket name from <code>!Sub</code></h3>
-        <p><code>leaver-check-${AWS::AccountId}-${AWS::Region}</code>. The function policy uses that string, not <code>!Ref</code> to the bucket.</p>
-        <p class="why"><b>Why</b> No circular dependency between bucket, its notification and the function role.</p>
+        <p><code>leaver-check-${AWS::AccountId}-${AWS::Region}-${StackSuffix}</code>, where the suffix is the first block of the stack's unique ID. The function policy uses that string, not <code>!Ref</code> to the bucket.</p>
+        <p class="why"><b>Why</b> No circular dependency between bucket, its notification and the function role, and several stacks can share an account and region.</p>
         <p class="where">template.yaml · RunsBucket.BucketName</p>
       </article>
       <article class="note g">
@@ -253,11 +253,6 @@ footer p { margin: 0; max-width: 90ch; }
         <span class="pill high">High</span>
         <div><h4>Never deployed</h4><p>The S3 trigger, S3's permission to invoke the function, the failure queue, the 404-instead-of-403 behavior and <code>nodejs24.x</code> in a given region are only proven by a real deploy.</p></div>
         <p class="fix"><b>Deploy to a test account</b> and run the example files end to end.</p>
-      </div>
-      <div class="gap">
-        <span class="pill med">Medium</span>
-        <div><h4>One stack per account and region</h4><p>The bucket name is built from account and region, so a second deploy there fails because the name is taken.</p></div>
-        <p class="fix"><b>Add the stack name</b> or a parameter to the bucket name.</p>
       </div>
       <div class="gap">
         <span class="pill med">Medium</span>
@@ -408,7 +403,7 @@ footer p { margin: 0; max-width: 90ch; }
     b.rect(200, 90, 280, 420, { color: "blue", w: 2.4, fill: "blue-soft", angle: 60 });
     b.rect(216, 165, 248, 245, { color: "ink", fill: "panel", fillStyle: "solid" });
     b.text(340, 122, "S3 bucket", "b blue");
-    b.text(340, 148, "leaver-check-<acct>-<region>", "m");
+    b.text(340, 148, "leaver-check-<acct>-<region>-<id>", "m");
     b.text(230, 192, "runs/<name>/", "m b", "start");
     const rows = [["hr.csv", "upload", "mut"], ["app.csv", "upload", "mut"], ["config.json", "optional", "mut"], ["review.csv", "output", "green"], ["summary.json", "output", "green"]];
     rows.forEach(([f, tag, cls], i) => {
