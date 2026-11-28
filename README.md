@@ -82,6 +82,16 @@ It runs the same `reconcile()` as the other three, so the findings are identical
 
 You can also invoke it directly with `{"bucket": "<BucketName>", "prefix": "runs/payroll-2026-q4/"}`.
 
+#### Deploying from GitHub Actions
+
+`.github/workflows/deploy.yml` deploys with temporary credentials instead of stored AWS keys. GitHub gives the workflow a short-lived OIDC token, and AWS exchanges it for a one-hour session on a role that only this repository's `main` branch can assume. That role can run CloudFormation change sets on `leaver-check*` stacks and upload the build. The resources themselves are created by a separate execution role that only CloudFormation can assume, limited to `leaver-check` names.
+
+One-time setup, in the AWS region you'll deploy to:
+
+1. In the AWS console, open **CloudFormation**, choose **Create stack**, and upload [`aws/github-deploy-role.yaml`](aws/github-deploy-role.yaml). Name it `leaver-check-github-deploy`. If you fork this repository, change `GitHubOwner` and `GitHubRepo`. If the account already has an IAM identity provider for `token.actions.githubusercontent.com`, set `CreateOIDCProvider` to `false`. Acknowledge that the stack creates named IAM roles.
+2. In GitHub, open **Settings → Secrets and variables → Actions → Variables** and add `AWS_DEPLOY_ROLE_ARN` (the stack's `DeployRoleArn` output) and `AWS_REGION` (for example `us-east-1`). To get alarm emails, add a secret named `ALARM_EMAIL`.
+3. Open **Actions → Deploy to AWS → Run workflow**. It builds, deploys, uploads the example files to `runs/smoke-test-<run>/`, and fails unless the results match the tests: 3 leavers, 2 orphan accounts, 4 dormant.
+
 ## Getting the files
 
 - **HR:** any worker report with employee ID, work email, employment status and termination date. Include people who left during the review period, or their accounts will show up as "no matching person" instead of "has left".
